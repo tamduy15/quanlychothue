@@ -1,0 +1,6 @@
+{
+  "name": "CineRent - Quản lý Cho thuê Thiết bị Quay Chụp",
+  "description": "Ứng dụng PWA Offline-First quản lý cho thuê máy ảnh, thiết bị quay chụp, chống trùng lịch và sổ quỹ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
