@@ -6,7 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
-    base: '/quanlychothue/',
+    base: './', // Optimized for GitHub Pages deployment under any repository subpath
     plugins: [
       react(),
       tailwindcss(),
@@ -14,15 +14,15 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
         manifest: {
-          id: '/quanlychothue/',
+          id: '/',
           name: 'CineRent - Quản lý Cho thuê Thiết bị Quay Chụp',
           short_name: 'CineRent',
           description: 'Ứng dụng Offline-First PWA quản lý cho thuê máy ảnh, thiết bị quay chụp, chống trùng lịch và sổ quỹ.',
           theme_color: '#090d16',
           background_color: '#090d16',
           display: 'standalone',
-          start_url: '/quanlychothue/',
-          scope: '/quanlychothue/',
+          start_url: '/',
+          scope: '/',
           icons: [
             {
               src: 'pwa-192x192.png',
@@ -46,6 +46,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         },
         devOptions: {
           enabled: true,

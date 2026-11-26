@@ -90,7 +90,7 @@ export function parseVNDateTime(str: string): Date | null {
 
 export const EQUIPMENT_STATUS_MAP: Record<string, { label: string; bg: string; text: string; border: string }> = {
   available: {
-    label: 'Sẵn sàng',
+    label: 'Hoạt động (Sẵn sàng)',
     bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     text: 'text-emerald-700',
     border: 'border-emerald-200',
@@ -102,13 +102,13 @@ export const EQUIPMENT_STATUS_MAP: Record<string, { label: string; bg: string; t
     border: 'border-amber-200',
   },
   maintenance: {
-    label: 'Bảo dưỡng / Sửa',
+    label: 'Bảo trì',
     bg: 'bg-rose-50 text-rose-700 border-rose-200',
     text: 'text-rose-700',
     border: 'border-rose-200',
   },
   retired: {
-    label: 'Ngừng khai thác',
+    label: 'Ngừng cho thuê',
     bg: 'bg-slate-100 text-slate-600 border-slate-200',
     text: 'text-slate-600',
     border: 'border-slate-200',
@@ -124,28 +124,28 @@ export const BOOKING_STATUS_MAP: Record<string, { label: string; bg: string; tex
     barBg: 'bg-slate-400 text-white',
   },
   confirmed: {
-    label: 'Đã chốt lịch',
+    label: 'Giữ lịch',
+    bg: 'bg-amber-50 text-amber-800 border-amber-200',
+    text: 'text-amber-800',
+    border: 'border-amber-200',
+    barBg: 'bg-blue-600 text-white shadow-sm',
+  },
+  active: {
+    label: 'Đã giao máy',
     bg: 'bg-blue-50 text-blue-700 border-blue-200',
     text: 'text-blue-700',
     border: 'border-blue-200',
-    barBg: 'bg-blue-500 text-white shadow-sm',
-  },
-  active: {
-    label: 'Đang thuê máy',
-    bg: 'bg-amber-50 text-amber-700 border-amber-200',
-    text: 'text-amber-700',
-    border: 'border-amber-200',
-    barBg: 'bg-amber-500 text-white shadow-sm',
+    barBg: 'bg-emerald-600 text-white shadow-sm',
   },
   returned: {
-    label: 'Đã hoàn thành',
+    label: 'Đã trả',
     bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     text: 'text-emerald-700',
     border: 'border-emerald-200',
-    barBg: 'bg-emerald-500 text-white shadow-sm',
+    barBg: 'bg-slate-500 text-white shadow-sm',
   },
   cancelled: {
-    label: 'Đã hủy',
+    label: 'Hủy',
     bg: 'bg-rose-50 text-rose-700 border-rose-200',
     text: 'text-rose-700',
     border: 'border-rose-200',

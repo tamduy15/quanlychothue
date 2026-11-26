@@ -12,6 +12,7 @@ import {
 import { db } from '../../db/db.ts';
 import { GlassCard } from '../common/GlassCard.tsx';
 import { GlassModal } from '../common/GlassModal.tsx';
+import { PopupSelect } from '../common/PopupSelect.tsx';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal.tsx';
 import { calculateFinancialSummary } from '../../utils/financials.ts';
 import { formatVND, formatDateTimeVN } from '../../utils/formatters.ts';
@@ -329,19 +330,19 @@ export const FinanceView: React.FC = () => {
         <form onSubmit={handleAddTransaction} className="space-y-4 text-xs text-slate-800">
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Loại nghiệp vụ</label>
-            <select
+            <PopupSelect
               value={type}
-              onChange={(e) => handleTypeChange(e.target.value as TransactionType)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none shadow-xs"
-            >
-              <option value="income_rent">1. Thu tiền thuê máy (+ Doanh thu)</option>
-              <option value="deposit_holding_in">2. Thu tiền cọc giữ lịch (+ Cọc đang giữ)</option>
-              <option value="deposit_holding_refund">3. Hoàn/Cấn trừ cọc giữ lịch (- Cọc đang giữ)</option>
-              <option value="deposit_security_in">4. Thu tiền cọc thế chân máy (+ Cọc đang giữ)</option>
-              <option value="deposit_security_refund">5. Hoàn tiền cọc thế chân (- Cọc đang giữ)</option>
-              <option value="expense">6. Chi phí vận hành, bảo dưỡng (- Chi phí)</option>
-              <option value="other_income">7. Thu khác (+ Doanh thu)</option>
-            </select>
+              onChange={(val) => handleTypeChange(val as TransactionType)}
+              options={[
+                { value: 'income_rent', label: '1. Thu tiền thuê máy (+ Doanh thu)' },
+                { value: 'deposit_holding_in', label: '2. Thu tiền cọc giữ lịch (+ Cọc đang giữ)' },
+                { value: 'deposit_holding_refund', label: '3. Hoàn/Cấn trừ cọc giữ lịch (- Cọc đang giữ)' },
+                { value: 'deposit_security_in', label: '4. Thu tiền cọc thế chân máy (+ Cọc đang giữ)' },
+                { value: 'deposit_security_refund', label: '5. Hoàn tiền cọc thế chân (- Cọc đang giữ)' },
+                { value: 'expense', label: '6. Chi phí vận hành, bảo dưỡng (- Chi phí)' },
+                { value: 'other_income', label: '7. Thu khác (+ Doanh thu)' },
+              ]}
+            />
           </div>
 
           <div>
@@ -361,15 +362,15 @@ export const FinanceView: React.FC = () => {
 
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Phương thức thanh toán</label>
-            <select
+            <PopupSelect
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none shadow-xs"
-            >
-              <option value="transfer">Chuyển khoản ngân hàng (Transfer)</option>
-              <option value="cash">Tiền mặt (Cash)</option>
-              <option value="card">Thẻ / POS</option>
-            </select>
+              onChange={(val) => setPaymentMethod(val as PaymentMethod)}
+              options={[
+                { value: 'transfer', label: 'Chuyển khoản ngân hàng (Transfer)' },
+                { value: 'cash', label: 'Tiền mặt (Cash)' },
+                { value: 'card', label: 'Thẻ / POS' },
+              ]}
+            />
           </div>
 
           <div>

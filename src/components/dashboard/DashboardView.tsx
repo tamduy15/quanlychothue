@@ -13,17 +13,23 @@ import {
   ArrowUpRight,
   Shield,
   Layers,
+  Sparkles,
+  Copy,
+  CheckCircle2,
 } from 'lucide-react';
 import { db } from '../../db/db.ts';
 import { GlassCard } from '../common/GlassCard.tsx';
 import { formatVND, formatDateTimeVN, STORE_OWNER } from '../../utils/formatters.ts';
 import { calculateFinancialSummary } from '../../utils/financials.ts';
+import { buildRentalMessages, copyTextWithToast } from '../../utils/rentalMessages.ts';
+import type { Booking, Equipment } from '../../types/index.ts';
 
 interface DashboardViewProps {
-  onNavigate: (tab: 'dashboard' | 'equipment' | 'bookings' | 'customers' | 'finance' | 'backup') => void;
+  onNavigate: (tab: 'dashboard' | 'equipment' | 'bookings' | 'messages' | 'customers' | 'finance' | 'backup') => void;
   onOpenNewBooking: () => void;
   onOpenNewEquipment: () => void;
   onSelectBooking: (bookingId: number) => void;
+  onOpenCheckAvailability?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -31,9 +37,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenNewBooking,
   onOpenNewEquipment,
   onSelectBooking,
+  onOpenCheckAvailability,
 }) => {
   const equipment = useLiveQuery(() => db.equipment.toArray()) || [];
   const bookings = useLiveQuery(() => db.bookings.toArray()) || [];
+  const bookingItems = useLiveQuery(() => db.booking_items.toArray()) || [];
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
   const transactions = useLiveQuery(() => db.transactions.toArray()) || [];
 
@@ -50,6 +58,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const customerMap = React.useMemo(() => {
     return new Map(customers.map((c) => [c.id, c]));
   }, [customers]);
+
+  const equipmentMap = React.useMemo(() => {
+    return new Map(equipment.map((e) => [e.id, e]));
+  }, [equipment]);
+
+  const bookingEquipMap = React.useMemo(() => {
+    const map = new Map<number, Equipment[]>();
+    for (const bi of bookingItems) {
+      const eq = equipmentMap.get(bi.equipment_id);
+      if (eq) {
+        const list = map.get(bi.booking_id) || [];
+        list.push(eq);
+        map.set(bi.booking_id, list);
+      }
+    }
+    return map;
+  }, [bookingItems, equipmentMap]);
+
+  const handleQuickCopy = async (
+    e: React.MouseEvent,
+    booking: Booking,
+    type: 'depositReceived' | 'pickupReminder' | 'handedOver' | 'returnReminder'
+  ) => {
+    e.stopPropagation();
+    const cust = customerMap.get(booking.customer_id);
+    const eqList = booking.id ? bookingEquipMap.get(booking.id) || [] : [];
+    const msgs = buildRentalMessages(booking, eqList, cust);
+    const labels: Record<string, string> = {
+      depositReceived: 'Đã copy tin xác nhận cọc giữ lịch!',
+      pickupReminder: 'Đã copy tin nhắc nhận máy!',
+      handedOver: 'Đã copy tin đã giao máy!',
+      returnReminder: 'Đã copy tin nhắc trả máy!',
+    };
+    await copyTextWithToast(msgs[type], labels[type]);
+  };
 
   const upcomingReturns = [...activeBookings].sort(
     (a, b) => new Date(a.end_at).getTime() - new Date(b.end_at).getTime()
@@ -74,7 +117,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             Tổng quan Quản lý Thuê máy
           </h1>
           <p className="text-xs sm:text-sm text-slate-500">
-            Dữ liệu offline tức thì, kiểm tra chống trùng lịch tự động.
+            Dữ liệu offline tức thì, kiểm tra chống trùng lịch & tạo tin nhắn tự động.
           </p>
         </div>
 
@@ -84,14 +127,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:brightness-105 active:scale-95 transition"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>Tạo đơn thuê mới</span>
+            <span>+ Tạo lịch thuê</span>
+          </button>
+          <button
+            onClick={() => (onOpenCheckAvailability ? onOpenCheckAvailability() : onNavigate('messages'))}
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 active:scale-95 transition shadow-2xs"
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>✓ Check lịch máy trống</span>
+          </button>
+          <button
+            onClick={() => onNavigate('messages')}
+            className="flex items-center gap-1.5 rounded-xl border border-cyan-200 bg-cyan-50 px-3.5 py-2 text-xs font-bold text-cyan-800 hover:bg-cyan-100 active:scale-95 transition shadow-2xs"
+          >
+            <Sparkles className="w-4 h-4 text-cyan-600" />
+            <span>✦ Tin nhắn tự động</span>
           </button>
           <button
             onClick={() => onNavigate('bookings')}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition shadow-2xs"
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition shadow-2xs"
           >
             <Layers className="w-4 h-4 text-cyan-600" />
-            <span>Xem Timeline tháng</span>
+            <span>Lịch tháng</span>
           </button>
         </div>
       </div>
@@ -135,10 +192,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-2xl sm:text-3xl font-black text-amber-600">{activeBookings.length}</span>
-            <span className="text-xs text-slate-500 font-semibold">đang thuê ngoài</span>
+            <span className="text-xs text-slate-500 font-semibold">đã giao máy</span>
           </div>
           <div className="mt-2 text-[11px] text-slate-500">
-            <span className="text-blue-700 font-bold">{confirmedBookings.length} đơn</span> đã chốt chờ giao
+            <span className="text-blue-700 font-bold">{confirmedBookings.length} đơn</span> đang giữ lịch
           </div>
         </GlassCard>
 
@@ -198,7 +255,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-600" />
                 <h2 className="font-bold text-slate-900 text-sm sm:text-base">
-                  Thiết bị cần thu hồi / Nhận lại ({upcomingReturns.length})
+                  Đang giao máy / Sắp đến giờ trả ({upcomingReturns.length})
                 </h2>
               </div>
               <button
@@ -217,6 +274,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               ) : (
                 upcomingReturns.map((b) => {
                   const customer = customerMap.get(b.customer_id);
+                  const eqList = b.id ? bookingEquipMap.get(b.id) || [] : [];
+                  const equipTitle = eqList.map((e) => e.name).join(', ') || b.booking_code;
                   const isOverdue = new Date(b.end_at).getTime() < Date.now();
                   return (
                     <div
@@ -229,8 +288,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       }`}
                     >
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-xs text-slate-900">{equipTitle}</span>
+                          <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
                             {b.booking_code}
                           </span>
                           {isOverdue && (
@@ -239,25 +299,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             </span>
                           )}
                           <span className="text-xs text-slate-700">
-                            Khách: <strong className="text-slate-900 font-bold">{customer?.name}</strong>
+                            • Khách: <strong className="text-slate-900 font-bold">{customer?.name}</strong>
                           </span>
                         </div>
                         <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
-                          <span>Dự kiến trả:</span>
+                          <span>Giờ trả:</span>
                           <strong className={isOverdue ? 'text-rose-700' : 'text-slate-800'}>
                             {formatDateTimeVN(b.end_at)}
                           </strong>
                           <span>•</span>
-                          <span>Cọc thế chân: {formatVND(b.deposit_security_received || b.deposit_received)}</span>
+                          <span>Cọc thế chân: {formatVND(b.deposit_security_received || b.deposit_security_required)}</span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs font-bold text-emerald-700">
-                          {formatVND(b.total_rent)}
-                        </span>
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={(e) => handleQuickCopy(e, b, 'returnReminder')}
+                          className="rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-600 hover:text-white transition flex items-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy nhắc trả</span>
+                        </button>
                         <button className="rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-cyan-600 hover:text-white transition">
-                          Kiểm máy & Trả cọc
+                          Chi tiết & Trả máy
                         </button>
                       </div>
                     </div>
@@ -273,25 +338,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <ArrowUpRight className="w-4 h-4 text-blue-600" />
                 <h2 className="font-bold text-slate-900 text-sm sm:text-base">
-                  Đơn đã chốt sắp bàn giao ({upcomingHandovers.length})
+                  Đang giữ lịch / Sắp nhận máy ({upcomingHandovers.length})
                 </h2>
               </div>
               <button
                 onClick={() => onNavigate('bookings')}
                 className="text-xs text-cyan-700 hover:text-cyan-900 flex items-center gap-1 font-bold"
               >
-                Xem timeline <ArrowRight className="w-3 h-3" />
+                Xem lịch <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
             <div className="mt-4 space-y-2.5">
               {upcomingHandovers.length === 0 ? (
                 <div className="py-6 text-center text-slate-400 text-xs">
-                  Không có đơn nào sắp giao trong hôm nay.
+                  Không có đơn nào sắp giao.
                 </div>
               ) : (
                 upcomingHandovers.map((b) => {
                   const customer = customerMap.get(b.customer_id);
+                  const eqList = b.id ? bookingEquipMap.get(b.id) || [] : [];
+                  const equipTitle = eqList.map((e) => e.name).join(', ') || b.booking_code;
                   return (
                     <div
                       key={b.id}
@@ -299,22 +366,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition cursor-pointer"
                     >
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-blue-800 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-xs text-slate-900">{equipTitle}</span>
+                          <span className="font-mono text-[10px] font-bold text-blue-800 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
                             {b.booking_code}
                           </span>
                           <span className="text-xs text-slate-700">
-                            Khách: <strong className="text-slate-900">{customer?.name}</strong> {customer?.phone && `(${customer.phone})`}
+                            • Khách: <strong className="text-slate-900">{customer?.name}</strong>{' '}
+                            {customer?.phone && `(${customer.phone})`}
                           </span>
                         </div>
                         <div className="text-xs text-slate-500 mt-1">
-                          Thời gian nhận: <strong className="text-slate-800">{formatDateTimeVN(b.start_at)}</strong>
+                          Nhận máy: <strong className="text-slate-800">{formatDateTimeVN(b.start_at)}</strong> →{' '}
+                          <strong className="text-slate-800">{formatDateTimeVN(b.end_at)}</strong>
                         </div>
                       </div>
 
-                      <button className="rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1 text-xs font-bold text-white transition">
-                        Bàn giao máy
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={(e) => handleQuickCopy(e, b, 'depositReceived')}
+                          className="rounded-lg bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-bold text-cyan-800 hover:bg-cyan-600 hover:text-white transition flex items-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy xác nhận cọc</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleQuickCopy(e, b, 'pickupReminder')}
+                          className="rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-800 hover:text-white transition flex items-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Nhắc nhận</span>
+                        </button>
+                      </div>
                     </div>
                   );
                 })
@@ -366,6 +451,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <h3 className="font-bold text-slate-900 text-sm mb-3">Truy cập nhanh</h3>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
+                onClick={() => onNavigate('messages')}
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-cyan-200 bg-cyan-50 hover:bg-cyan-100 transition text-cyan-900 font-bold"
+              >
+                <Sparkles className="w-4 h-4 text-cyan-600" />
+                <span>Tin nhắn tự động</span>
+              </button>
+              <button
+                onClick={() => (onOpenCheckAvailability ? onOpenCheckAvailability() : onNavigate('messages'))}
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition text-emerald-900 font-bold"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Check lịch trống</span>
+              </button>
+              <button
                 onClick={() => onNavigate('equipment')}
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition text-slate-800 font-medium"
               >
@@ -377,7 +476,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition text-slate-800 font-medium"
               >
                 <Layers className="w-4 h-4 text-blue-600" />
-                <span>Lịch Gantt</span>
+                <span>Lịch thuê</span>
               </button>
               <button
                 onClick={() => onNavigate('finance')}

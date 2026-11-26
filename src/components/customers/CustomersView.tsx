@@ -14,6 +14,7 @@ import {
 import { db } from '../../db/db.ts';
 import { GlassCard } from '../common/GlassCard.tsx';
 import { GlassModal } from '../common/GlassModal.tsx';
+import { PopupSelect } from '../common/PopupSelect.tsx';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal.tsx';
 import { TRUST_LEVEL_MAP } from '../../utils/formatters.ts';
 import type { Customer, CustomerTrustLevel } from '../../types/index.ts';
@@ -348,16 +349,16 @@ export const CustomersView: React.FC = () => {
             </div>
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Hạng tín nhiệm</label>
-              <select
+              <PopupSelect
                 value={trustLevel}
-                onChange={(e) => setTrustLevel(e.target.value as CustomerTrustLevel)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-cyan-500 focus:outline-none shadow-xs"
-              >
-                <option value="normal">Khách thường / Mới</option>
-                <option value="verified">Đã xác minh CCCD</option>
-                <option value="vip">VIP Uy tín</option>
-                <option value="blacklisted">Cảnh báo rủi ro</option>
-              </select>
+                onChange={(val) => setTrustLevel(val as CustomerTrustLevel)}
+                options={[
+                  { value: 'normal', label: 'Khách thường / Mới' },
+                  { value: 'verified', label: 'Đã xác minh CCCD' },
+                  { value: 'vip', label: 'VIP Uy tín' },
+                  { value: 'blacklisted', label: 'Cảnh báo rủi ro' },
+                ]}
+              />
             </div>
           </div>
 

@@ -16,13 +16,15 @@ import {
   PlusCircle,
   Menu,
   X,
-  Layers,
+  Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 import { db } from './db/db.ts';
 import { initializeDatabaseIfEmpty } from './db/seedData.ts';
 import { DashboardView } from './components/dashboard/DashboardView.tsx';
 import { EquipmentView } from './components/equipment/EquipmentView.tsx';
 import { BookingsView } from './components/bookings/BookingsView.tsx';
+import { SmartMessagesAndCheckView } from './components/messages/SmartMessagesAndCheckView.tsx';
 import { CustomersView } from './components/customers/CustomersView.tsx';
 import { FinanceView } from './components/finance/FinanceView.tsx';
 import { BackupView } from './components/backup/BackupView.tsx';
@@ -35,17 +37,26 @@ import { BackupAlertBanner } from './components/common/BackupAlertBanner.tsx';
 import { useBackupReminder } from './hooks/useBackupReminder.ts';
 import { STORE_OWNER } from './utils/formatters.ts';
 
-export type NavTab = 'dashboard' | 'equipment' | 'bookings' | 'customers' | 'finance' | 'backup';
+export type NavTab = 'dashboard' | 'equipment' | 'bookings' | 'messages' | 'customers' | 'finance' | 'backup';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Global Quick Modals
+  // Global Quick Modals & Preselected state
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
   const [preselectedEquipmentId, setPreselectedEquipmentId] = useState<number | undefined>(undefined);
+  const [initialBookingDate, setInitialBookingDate] = useState<Date | undefined>(undefined);
+  const [initialBookingEndDate, setInitialBookingEndDate] = useState<Date | undefined>(undefined);
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
+
+  // Smart Messages & Check Sub-tab state
+  const [messagesSubTab, setMessagesSubTab] = useState<'messages' | 'check'>('messages');
+  const [checkEquipmentId, setCheckEquipmentId] = useState<number | undefined>(undefined);
+
+  // Global Toast Notification
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Backup status
   const { daysSinceBackup, shouldAlert, refreshBackupStatus } = useBackupReminder();
@@ -60,24 +71,59 @@ export default function App() {
     });
   }, []);
 
-  const handleOpenNewBooking = (equipId?: number) => {
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const handleToast = (e: Event) => {
+      const customEvent = e as CustomEvent<{ message: string }>;
+      if (customEvent.detail?.message) {
+        setToastMessage(customEvent.detail.message);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          setToastMessage(null);
+        }, 3200);
+      }
+    };
+    window.addEventListener('cinerent-toast', handleToast);
+    return () => {
+      window.removeEventListener('cinerent-toast', handleToast);
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const handleOpenNewBooking = (equipId?: number, startDate?: Date, endDate?: Date) => {
     setPreselectedEquipmentId(equipId);
+    setInitialBookingDate(startDate);
+    setInitialBookingEndDate(endDate);
     setIsBookingModalOpen(true);
+  };
+
+  const handleOpenCheckAvailability = (equipId?: number) => {
+    setCheckEquipmentId(equipId);
+    setMessagesSubTab('check');
+    setActiveTab('messages');
   };
 
   const navItems: {
     id: NavTab;
     label: string;
+    shortLabel?: string;
     icon: React.FC<{ className?: string }>;
     badge?: number | string;
     alert?: boolean;
   }[] = [
-    { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
-    { id: 'equipment', label: 'Kho máy', icon: Camera },
-    { id: 'bookings', label: 'Lịch thuê', icon: Calendar, badge: activeBookingsCount > 0 ? activeBookingsCount : undefined },
-    { id: 'customers', label: 'Khách hàng', icon: Users },
-    { id: 'finance', label: 'Sổ quỹ', icon: TrendingUp },
-    { id: 'backup', label: 'Sao lưu', icon: Database, alert: shouldAlert },
+    { id: 'dashboard', label: 'Tổng quan', shortLabel: 'Tổng quan', icon: LayoutDashboard },
+    { id: 'equipment', label: 'Kho máy', shortLabel: 'Kho máy', icon: Camera },
+    {
+      id: 'bookings',
+      label: 'Lịch thuê',
+      shortLabel: 'Lịch thuê',
+      icon: Calendar,
+      badge: activeBookingsCount > 0 ? activeBookingsCount : undefined,
+    },
+    { id: 'messages', label: '✦ Tin nhắn & Check', shortLabel: 'Tin nhắn', icon: Sparkles },
+    { id: 'customers', label: 'Khách hàng', shortLabel: 'Khách', icon: Users },
+    { id: 'finance', label: 'Sổ quỹ', shortLabel: 'Sổ quỹ', icon: TrendingUp },
+    { id: 'backup', label: 'Sao lưu', shortLabel: 'Sao lưu', icon: Database, alert: shouldAlert },
   ];
 
   return (
@@ -122,7 +168,12 @@ export default function App() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    if (item.id === 'messages') {
+                      setMessagesSubTab('messages');
+                    }
+                    setActiveTab(item.id);
+                  }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition relative ${
                     isActive
                       ? 'bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-xs'
@@ -154,7 +205,7 @@ export default function App() {
               className="hidden sm:flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:brightness-105 active:scale-95 transition"
             >
               <PlusCircle className="w-3.5 h-3.5" />
-              <span>+ Tạo đơn</span>
+              <span>+ Tạo lịch</span>
             </button>
 
             {/* Mobile burger toggle */}
@@ -178,6 +229,9 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => {
+                    if (item.id === 'messages') {
+                      setMessagesSubTab('messages');
+                    }
                     setActiveTab(item.id);
                     setMobileMenuOpen(false);
                   }}
@@ -205,16 +259,21 @@ export default function App() {
       <main className="flex-1 mx-auto w-full max-w-7xl px-3 sm:px-4 py-4 sm:py-6 pb-24 md:pb-6">
         {activeTab === 'dashboard' && (
           <DashboardView
-            onNavigate={(tab) => setActiveTab(tab)}
+            onNavigate={(tab) => {
+              if (tab === 'messages') setMessagesSubTab('messages');
+              setActiveTab(tab);
+            }}
             onOpenNewBooking={() => handleOpenNewBooking()}
             onOpenNewEquipment={() => setIsEquipmentModalOpen(true)}
             onSelectBooking={(id) => setSelectedBookingId(id)}
+            onOpenCheckAvailability={() => handleOpenCheckAvailability()}
           />
         )}
 
         {activeTab === 'equipment' && (
           <EquipmentView
             onOpenNewBookingWithEquipment={(eqId) => handleOpenNewBooking(eqId)}
+            onCheckAvailability={(eqId) => handleOpenCheckAvailability(eqId)}
           />
         )}
 
@@ -222,6 +281,18 @@ export default function App() {
           <BookingsView
             initialSelectedBookingId={selectedBookingId}
             onClearSelectedBooking={() => setSelectedBookingId(null)}
+          />
+        )}
+
+        {activeTab === 'messages' && (
+          <SmartMessagesAndCheckView
+            key={`${messagesSubTab}-${checkEquipmentId || 'all'}`}
+            initialSubTab={messagesSubTab}
+            preselectedCheckMachineId={checkEquipmentId}
+            onOpenNewBookingPrefilled={({ equipmentId, startDate, endDate }) =>
+              handleOpenNewBooking(equipmentId, startDate, endDate)
+            }
+            onSelectBooking={(id) => setSelectedBookingId(id)}
           />
         )}
 
@@ -234,17 +305,20 @@ export default function App() {
 
       {/* 4. Mobile Bottom Navigation Bar (Light Theme) */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-2 py-1.5 md:hidden shadow-lg"
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-1.5 py-1.5 md:hidden shadow-lg"
         aria-label="Thanh điều hướng dưới"
       >
-        <div className="grid grid-cols-6 gap-1">
+        <div className="grid grid-cols-7 gap-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  if (item.id === 'messages') setMessagesSubTab('messages');
+                  setActiveTab(item.id);
+                }}
                 className={`flex flex-col items-center justify-center py-1 rounded-xl transition relative ${
                   isActive
                     ? 'text-cyan-700 font-black bg-cyan-50'
@@ -252,7 +326,7 @@ export default function App() {
                 }`}
               >
                 <div className="relative">
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                   {item.badge !== undefined && (
                     <span className="absolute -top-1 -right-2 rounded-full bg-amber-500 px-1 text-[8px] font-black text-black">
                       {item.badge}
@@ -262,8 +336,8 @@ export default function App() {
                     <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
                   )}
                 </div>
-                <span className="text-[10px] mt-0.5 truncate max-w-full font-semibold">
-                  {item.label}
+                <span className="text-[9.5px] mt-0.5 truncate max-w-full font-semibold">
+                  {item.shortLabel || item.label}
                 </span>
               </button>
             );
@@ -277,8 +351,12 @@ export default function App() {
         onClose={() => {
           setIsBookingModalOpen(false);
           setPreselectedEquipmentId(undefined);
+          setInitialBookingDate(undefined);
+          setInitialBookingEndDate(undefined);
         }}
         preselectedEquipmentId={preselectedEquipmentId}
+        initialDate={initialBookingDate}
+        initialEndDate={initialBookingEndDate}
         onSaved={() => {
           setActiveTab('bookings');
         }}
@@ -299,11 +377,19 @@ export default function App() {
         isOpen={!!selectedBookingId}
         onClose={() => setSelectedBookingId(null)}
         bookingId={selectedBookingId}
-        onEdit={(b) => {
+        onEdit={() => {
           setSelectedBookingId(null);
           setIsBookingModalOpen(true);
         }}
       />
+
+      {/* 8. Global Floating Toast Notification (Matching .toast in Google Apps Script) */}
+      {toastMessage && (
+        <div className="fixed bottom-16 md:bottom-5 right-4 z-50 max-w-sm rounded-2xl bg-slate-900/95 text-white px-4 py-3 shadow-2xl border border-slate-700 flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-3">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-xs font-bold leading-snug">{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../db/db.ts';
 import { GlassCard } from '../common/GlassCard.tsx';
+import { PopupSelect } from '../common/PopupSelect.tsx';
 import { EquipmentModal } from './EquipmentModal.tsx';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal.tsx';
 import { formatVND, EQUIPMENT_STATUS_MAP } from '../../utils/formatters.ts';
@@ -18,10 +19,12 @@ import type { Equipment } from '../../types/index.ts';
 
 interface EquipmentViewProps {
   onOpenNewBookingWithEquipment?: (equipmentId: number) => void;
+  onCheckAvailability?: (equipmentId: number) => void;
 }
 
 export const EquipmentView: React.FC<EquipmentViewProps> = ({
   onOpenNewBookingWithEquipment,
+  onCheckAvailability,
 }) => {
   const equipment = useLiveQuery(() => db.equipment.toArray()) || [];
   const categories = useLiveQuery(() => db.categories.toArray()) || [];
@@ -93,7 +96,7 @@ export const EquipmentView: React.FC<EquipmentViewProps> = ({
           className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:brightness-105 active:scale-95 transition"
         >
           <Plus className="w-4 h-4" />
-          <span>Thêm thiết bị mới</span>
+          <span>+ Thêm máy mới</span>
         </button>
       </div>
 
@@ -112,17 +115,19 @@ export const EquipmentView: React.FC<EquipmentViewProps> = ({
 
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-slate-500 hidden sm:block" />
-          <select
+          <PopupSelect
             value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none shadow-xs"
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="available">Sẵn sàng (Hoạt động)</option>
-            <option value="rented">Đang cho thuê</option>
-            <option value="maintenance">Bảo dưỡng</option>
-            <option value="retired">Ngừng khai thác</option>
-          </select>
+            onChange={(val) => setSelectedStatus(val)}
+            dropdownAlign="right"
+            className="w-48"
+            options={[
+              { value: 'all', label: 'Tất cả trạng thái' },
+              { value: 'available', label: 'Hoạt động (Sẵn sàng)' },
+              { value: 'rented', label: 'Đang cho thuê' },
+              { value: 'maintenance', label: 'Bảo trì' },
+              { value: 'retired', label: 'Ngừng cho thuê' },
+            ]}
+          />
         </div>
       </div>
 
@@ -197,7 +202,6 @@ export const EquipmentView: React.FC<EquipmentViewProps> = ({
                           alt={eq.name}
                           className="w-full h-full object-cover"
                           onError={(e) => {
-                            // fallback on image broken
                             (e.target as HTMLElement).style.display = 'none';
                           }}
                         />
@@ -217,35 +221,47 @@ export const EquipmentView: React.FC<EquipmentViewProps> = ({
                       </h3>
                       {eq.serial_number && (
                         <span className="text-[10px] text-slate-400 font-mono block">
-                          S/N: {eq.serial_number}
+                          Serial: {eq.serial_number}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Pricing Box with 6h / 1d / 2d */}
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 space-y-1 mb-3 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-600 text-[11px]">Giá 1 ngày (24h):</span>
-                      <strong className="text-emerald-700 font-bold text-sm">
-                        {formatVND(eq.daily_rate)}
+                  {/* 3-Tier Pricing Boxes (6 giờ / 1 ngày / 2 ngày) matching .machine-prices */}
+                  <div className="grid grid-cols-3 gap-2 mb-2.5">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <span className="text-[10px] font-bold text-slate-500 block">6 giờ</span>
+                      <strong className="text-xs font-extrabold text-slate-900 mt-0.5 block">
+                        {formatVND(eq.rate_6h || 0)}
                       </strong>
                     </div>
-                    {eq.rate_6h ? (
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Giá gói 6h:</span>
-                        <span className="font-semibold text-slate-700">{formatVND(eq.rate_6h)}</span>
-                      </div>
-                    ) : null}
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200">
-                      <span>Cọc thế chân:</span>
-                      <span className="font-semibold text-indigo-700">{formatVND(eq.deposit_rate)}</span>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-2">
+                      <span className="text-[10px] font-bold text-emerald-700 block">1 ngày</span>
+                      <strong className="text-xs font-extrabold text-emerald-800 mt-0.5 block">
+                        {formatVND(eq.daily_rate || 0)}
+                      </strong>
                     </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <span className="text-[10px] font-bold text-slate-500 block">2 ngày</span>
+                      <strong className="text-xs font-extrabold text-slate-900 mt-0.5 block">
+                        {formatVND(eq.rate_2days || (eq.daily_rate ? eq.daily_rate * 2 : 0))}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Collateral & Keep CCCD Badges */}
+                  <div className="flex flex-wrap items-center gap-1.5 mb-2.5 text-[11px]">
+                    <span className="rounded-md bg-indigo-50 border border-indigo-200 px-2 py-0.5 font-semibold text-indigo-800">
+                      Cọc thế chân: {formatVND(eq.deposit_rate || 0)}
+                    </span>
+                    <span className="rounded-md bg-slate-100 border border-slate-200 px-2 py-0.5 font-medium text-slate-600">
+                      {eq.keep_cccd !== false ? 'Mặc định giữ CCCD' : 'Không giữ CCCD'}
+                    </span>
                   </div>
 
                   {/* Accessories */}
                   {eq.accessories && eq.accessories.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-2.5">
+                    <div className="flex flex-wrap gap-1 mb-2">
                       {eq.accessories.slice(0, 3).map((acc) => (
                         <span
                           key={acc}
@@ -274,28 +290,39 @@ export const EquipmentView: React.FC<EquipmentViewProps> = ({
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleEdit(eq)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
+                      className="px-2 py-1 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition flex items-center gap-1"
                       title="Chỉnh sửa thiết bị"
                     >
-                      <Edit className="w-4 h-4" />
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>Sửa</span>
                     </button>
                     <button
                       onClick={() => handleDelete(eq)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
                       title="Xóa thiết bị"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
 
-                  {eq.status === 'available' && onOpenNewBookingWithEquipment && eq.id && (
-                    <button
-                      onClick={() => onOpenNewBookingWithEquipment(eq.id!)}
-                      className="rounded-lg bg-cyan-50 border border-cyan-300 px-3 py-1 text-xs font-bold text-cyan-800 hover:bg-cyan-600 hover:text-white transition shadow-2xs"
-                    >
-                      + Tạo đơn thuê
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {onCheckAvailability && eq.id && (
+                      <button
+                        onClick={() => onCheckAvailability(eq.id!)}
+                        className="rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-800 hover:text-white transition"
+                      >
+                        ✓ Check lịch
+                      </button>
+                    )}
+                    {onOpenNewBookingWithEquipment && eq.id && (
+                      <button
+                        onClick={() => onOpenNewBookingWithEquipment(eq.id!)}
+                        className="rounded-lg bg-cyan-50 border border-cyan-300 px-2.5 py-1 text-xs font-bold text-cyan-800 hover:bg-cyan-600 hover:text-white transition shadow-2xs"
+                      >
+                        + Tạo lịch
+                      </button>
+                    )}
+                  </div>
                 </div>
               </GlassCard>
             );

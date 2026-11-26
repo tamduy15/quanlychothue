@@ -157,55 +157,40 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
   return (
     <div className="space-y-4 text-slate-800">
       {/* Top Header & View Mode Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <CalendarIcon className="w-6 h-6 text-cyan-600" />
-            <span>Lịch thuê & Timeline Thiết bị</span>
+          <h1 className="text-xl sm:text-2xl font-black text-[#10233f] tracking-tight flex items-center gap-2">
+            <CalendarIcon className="w-6 h-6 text-[#0068ff]" />
+            <span>Lịch cho thuê máy ảnh</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Xem lịch tháng dạng Gantt trực quan: biết ngay ai thuê máy nào, từ mấy giờ đến mấy giờ.
+          <p className="text-xs sm:text-sm text-[#667a99]">
+            Quản lý lịch giữ máy, bàn giao và thu hồi theo thời gian thực trên cả điện thoại & máy tính.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Mode Switcher */}
-          <div className="rounded-xl border border-slate-200 bg-white p-1 flex shadow-xs">
+          <div className="rounded-xl border border-[#d9e5f5] bg-white p-1 flex shadow-2xs">
             <button
               onClick={() => setViewMode('calendar_gantt')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition ${
                 viewMode === 'calendar_gantt'
-                  ? 'bg-cyan-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  ? 'bg-[#0068ff] text-white shadow-2xs'
+                  : 'text-[#16325c] hover:bg-slate-50'
               }`}
-              title="Gantt Lưới Tháng (Mặc định)"
             >
               <CalendarDays className="w-3.5 h-3.5" />
-              <span>Lưới tháng Gantt</span>
+              <span>Lịch thuê</span>
             </button>
             <button
               onClick={() => setViewMode('equipment_timeline')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition ${
                 viewMode === 'equipment_timeline'
-                  ? 'bg-cyan-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  ? 'bg-[#0068ff] text-white shadow-2xs'
+                  : 'text-[#16325c] hover:bg-slate-50'
               }`}
-              title="Gantt theo từng dòng thiết bị"
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Gantt theo Thiết bị</span>
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                viewMode === 'list'
-                  ? 'bg-cyan-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-              title="Danh sách đơn thuê"
-            >
-              <List className="w-3.5 h-3.5" />
-              <span>Danh sách</span>
+              <span>Theo dòng máy</span>
             </button>
           </div>
 
@@ -215,10 +200,10 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
               setInitialBookingDate(undefined);
               setIsCreateModalOpen(true);
             }}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:brightness-105 active:scale-95 transition"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#0068ff] to-[#00c2ff] px-4 py-2 text-xs font-extrabold text-white shadow-xs hover:brightness-105 active:scale-95 transition"
           >
             <Plus className="w-4 h-4" />
-            <span>Tạo đơn mới</span>
+            <span>+ Thêm lịch thuê</span>
           </button>
         </div>
       </div>

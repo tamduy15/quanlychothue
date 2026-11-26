@@ -1,19 +1,18 @@
 import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  FileText,
   User,
   Phone,
   Calendar,
   CheckCircle2,
-  AlertTriangle,
   Printer,
-  Shield,
   ArrowRight,
   Package,
-  Clock,
-  MapPin,
   Trash2,
+  Copy,
+  Check,
+  MessageSquareText,
+  Sparkles,
 } from 'lucide-react';
 import { db } from '../../db/db.ts';
 import { GlassModal } from '../common/GlassModal.tsx';
@@ -25,7 +24,18 @@ import {
   TRUST_LEVEL_MAP,
   STORE_OWNER,
 } from '../../utils/formatters.ts';
-import type { Booking, BookingItem, Equipment, Customer } from '../../types/index.ts';
+import {
+  buildRentalMessages,
+  getRecommendedMessageType,
+  copyTextWithToast,
+  RENTAL_MESSAGE_TYPES,
+  formatMoneyGAS,
+  isHoldingDepositReceived,
+  isSecurityDepositReceived,
+  isKeepCCCD,
+  type RentalMessageKey,
+} from '../../utils/rentalMessages.ts';
+import type { Booking, Equipment } from '../../types/index.ts';
 
 interface BookingDetailModalProps {
   isOpen: boolean;
@@ -40,11 +50,15 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
   bookingId,
   onEdit,
 }) => {
-  const booking = useLiveQuery(() => (bookingId ? db.bookings.get(bookingId) : undefined), [bookingId]);
-  const bookingItems = useLiveQuery(
-    () => (bookingId ? db.booking_items.where('booking_id').equals(bookingId).toArray() : []),
+  const booking = useLiveQuery(
+    () => (bookingId ? db.bookings.get(bookingId) : undefined),
     [bookingId]
-  ) || [];
+  );
+  const bookingItems =
+    useLiveQuery(
+      () => (bookingId ? db.booking_items.where('booking_id').equals(bookingId).toArray() : []),
+      [bookingId]
+    ) || [];
   const customer = useLiveQuery(
     () => (booking?.customer_id ? db.customers.get(booking.customer_id) : undefined),
     [booking]
@@ -60,11 +74,39 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
   const [returnExtraFee, setReturnExtraFee] = useState<number>(0);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<RentalMessageKey | null>(null);
+  const [editedMessages, setEditedMessages] = useState<Partial<Record<RentalMessageKey, string>>>({});
+  const [isMessageSectionOpen, setIsMessageSectionOpen] = useState(false);
+  const [openMessageKey, setOpenMessageKey] = useState<RentalMessageKey | null>(null);
 
   if (!booking) return null;
 
   const statusConfig = BOOKING_STATUS_MAP[booking.status] || BOOKING_STATUS_MAP.draft;
-  const trustConfig = customer ? TRUST_LEVEL_MAP[customer.trust_level] || TRUST_LEVEL_MAP.normal : null;
+
+  const bookingEquipments = bookingItems
+    .map((bi) => equipmentMap.get(bi.equipment_id))
+    .filter(Boolean) as Equipment[];
+
+  const messages = buildRentalMessages(booking, bookingEquipments, customer);
+  const recommendedMsg = getRecommendedMessageType(booking);
+
+  const daNhanCocGiuLich = isHoldingDepositReceived(booking);
+  const daNhanCocTheChan = isSecurityDepositReceived(booking);
+  const daNhanCCCD = Boolean(booking.has_received_cccd || booking.status === 'active');
+  const daThanhToan = Boolean(booking.is_rent_paid || booking.status === 'active' || booking.status === 'returned');
+
+  const handleCopyMessage = async (key: RentalMessageKey, overrideText?: string) => {
+    const meta = RENTAL_MESSAGE_TYPES.find((m) => m.key === key);
+    const text = overrideText ?? editedMessages[key] ?? messages[key];
+    await copyTextWithToast(
+      text,
+      `Đã copy "${meta?.title || 'tin nhắn'}" của khách ${customer?.name || booking.booking_code}!`
+    );
+    setCopiedKey(key);
+    setTimeout(() => {
+      setCopiedKey((prev) => (prev === key ? null : prev));
+    }, 2000);
+  };
 
   // Toggle accessory checklist state
   const handleToggleAccessory = async (
@@ -86,21 +128,41 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
     });
   };
 
-  // Action: Handover Equipment (Confirmed -> Active)
-  // Khi giao máy: Thu tiền thuê + Thu cọc thế chân (nếu có cọc giữ lịch thì cấn trừ hoặc hoàn trả)
+  // Quick status change to Confirmed (Giữ lịch)
+  const handleSetHoldStatus = async () => {
+    if (!booking.id) return;
+    const patch: Partial<Booking> = {
+      status: 'confirmed',
+    };
+    await db.bookings.update(booking.id, patch);
+    for (const item of bookingItems) {
+      await db.equipment.update(item.equipment_id, { status: 'available' });
+    }
+    const updatedBooking: Booking = { ...booking, ...patch };
+    const nextMsgs = buildRentalMessages(updatedBooking, bookingEquipments, customer);
+    await handleCopyMessage('depositReceived', nextMsgs.depositReceived);
+  };
+
+  // Action: Handover Equipment (Confirmed -> Active / DA_GIAO_MAY)
+  // Khi giao máy cho khách sẽ nhận: tiền cọc thế chân + tiền thuê + cccd bản cứng và check vneid
   const handleHandoverToCustomer = async () => {
     if (!booking.id) return;
     const now = new Date().toISOString();
 
     const secRequired = booking.deposit_security_required || booking.deposit_required || 0;
 
-    await db.bookings.update(booking.id, {
+    const patch: Partial<Booking> = {
       status: 'active',
       deposit_security_received: secRequired,
       deposit_received: secRequired,
-      // Đánh dấu cọc giữ lịch đã hoàn/cấn trừ
+      has_received_security_deposit: true,
+      has_received_cccd: true,
+      keep_cccd: true,
+      is_rent_paid: true,
       deposit_holding_returned: booking.deposit_holding_received || 0,
-    });
+    };
+
+    await db.bookings.update(booking.id, patch);
 
     for (const item of bookingItems) {
       await db.equipment.update(item.equipment_id, { status: 'rented' });
@@ -142,10 +204,14 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
         is_deposit: true,
       });
     }
+
+    // Auto-copy handedOver message
+    const updatedBooking: Booking = { ...booking, ...patch };
+    const nextMsgs = buildRentalMessages(updatedBooking, bookingEquipments, customer);
+    await handleCopyMessage('handedOver', nextMsgs.handedOver);
   };
 
-  // Action: Complete & Return Equipment (Active -> Returned)
-  // Khi trả máy: Kiểm tra máy, trừ phụ phí (nếu có) và Hoàn cọc thế chân cho khách
+  // Action: Complete & Return Equipment (Active -> Returned / DA_TRA)
   const handleCompleteReturn = async () => {
     if (!booking.id) return;
     const now = new Date().toISOString();
@@ -154,14 +220,16 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
     const secReceived = booking.deposit_security_received || booking.deposit_received || 0;
     const finalDepositRefund = Math.max(0, secReceived - extra);
 
-    await db.bookings.update(booking.id, {
+    const patch: Partial<Booking> = {
       status: 'returned',
       actual_return_at: now,
       extra_fees: (booking.extra_fees || 0) + extra,
       deposit_security_returned: finalDepositRefund,
       deposit_returned: finalDepositRefund,
       return_notes: returnNoteInput.trim() || 'Máy hoàn hảo, đầy đủ phụ kiện',
-    });
+    };
+
+    await db.bookings.update(booking.id, patch);
 
     for (const item of bookingItems) {
       await db.equipment.update(item.equipment_id, { status: 'available' });
@@ -192,6 +260,11 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
         is_deposit: false,
       });
     }
+
+    // Auto-copy completed message
+    const updatedBooking: Booking = { ...booking, ...patch };
+    const nextMsgs = buildRentalMessages(updatedBooking, bookingEquipments, customer);
+    await handleCopyMessage('completed', nextMsgs.completed);
   };
 
   const handleConfirmCancel = async () => {
@@ -215,44 +288,52 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
     onClose();
   };
 
+  const machineNamesHeader =
+    bookingEquipments.length > 0
+      ? bookingEquipments.map((e) => e.name).join(' + ')
+      : booking.booking_code;
+
   return (
     <GlassModal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Chi tiết đơn: ${booking.booking_code}`}
-      subtitle={`Tạo lúc: ${formatDateTimeVN(booking.created_at)}`}
+      title={`${machineNamesHeader} • ${customer?.name || 'Khách'}`}
+      subtitle={`Mã đơn: ${booking.booking_code} • ${customer?.phone || 'Chưa có SĐT'}`}
       maxWidth="2xl"
     >
-      <div className="space-y-4 text-xs text-slate-800">
+      <div className="space-y-3.5 text-xs text-slate-800">
         {/* Top Status & Print Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl border border-slate-200 bg-slate-50">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50">
+          <div className="flex items-center gap-2 flex-wrap">
             <span
               className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${statusConfig.bg} ${statusConfig.border}`}
             >
               {statusConfig.label}
             </span>
-            <span className="text-slate-500">
-              Tổng tiền thuê: <strong className="text-emerald-700 font-bold text-sm">{formatVND(booking.total_rent)}</strong>
+            <span className="text-slate-600">
+              Giá thuê:{' '}
+              <strong className="text-emerald-700 font-bold text-sm">
+                {formatVND(booking.total_rent)}
+              </strong>
             </span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowContractPreview(!showContractPreview)}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100 shadow-xs"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
             >
-              <Printer className="w-3.5 h-3.5 text-cyan-600" />
-              <span>{showContractPreview ? 'Xem giao diện đơn' : 'In Hợp đồng / Biên bản'}</span>
+              <Printer className="w-3.5 h-3.5 text-blue-600" />
+              <span>{showContractPreview ? 'Chi tiết lịch' : 'In Biên bản'}</span>
             </button>
             <button
               onClick={() => {
                 onClose();
                 onEdit(booking);
               }}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-100 shadow-xs font-semibold"
+              className="rounded-xl bg-blue-600 text-white px-3.5 py-1.5 hover:bg-blue-700 font-bold transition"
             >
-              Sửa đơn
+              Chỉnh sửa
             </button>
           </div>
         </div>
@@ -272,8 +353,12 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                 <strong className="block text-slate-900 font-bold border-b border-slate-200 pb-1">
                   BÊN CHO THUÊ (BÊN A)
                 </strong>
-                <p>Chủ cơ sở: <strong>{STORE_OWNER.name}</strong></p>
-                <p>Số điện thoại: <strong>{STORE_OWNER.phone}</strong></p>
+                <p>
+                  Chủ cơ sở: <strong>{STORE_OWNER.name}</strong>
+                </p>
+                <p>
+                  Số điện thoại: <strong>{STORE_OWNER.phone}</strong>
+                </p>
                 <p>Địa chỉ: {STORE_OWNER.address}</p>
               </div>
 
@@ -281,9 +366,11 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                 <strong className="block text-slate-900 font-bold border-b border-slate-200 pb-1">
                   BÊN THUÊ (BÊN B)
                 </strong>
-                <p>Họ tên: <strong>{customer?.name}</strong></p>
+                <p>
+                  Họ tên: <strong>{customer?.name}</strong>
+                </p>
                 <p>Số điện thoại: {customer?.phone || 'Chưa cung cấp'}</p>
-                <p>CCCD/CMND: {customer?.identity_card || 'Chưa cung cấp'}</p>
+                <p>CCCD/CMND: {customer?.identity_card || 'Bản cứng + đối chiếu VNeID'}</p>
                 <p>Địa chỉ: {customer?.address || 'Tại cơ sở'}</p>
               </div>
             </div>
@@ -291,7 +378,8 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
             <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
               <strong className="block text-slate-900 mb-1">THỜI GIAN THUÊ MÁY:</strong>
               <p>
-                Nhận lúc: <strong>{formatDateTimeVN(booking.start_at)}</strong> — Trả lúc: <strong>{formatDateTimeVN(booking.end_at)}</strong>
+                Nhận lúc: <strong>{formatDateTimeVN(booking.start_at)}</strong> — Trả lúc:{' '}
+                <strong>{formatDateTimeVN(booking.end_at)}</strong>
               </p>
             </div>
 
@@ -333,15 +421,23 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
             <div className="grid grid-cols-3 gap-2 border-t border-slate-200 pt-3 text-xs">
               <div>
                 <span className="text-slate-500 block">1. Tiền thuê máy:</span>
-                <strong className="text-emerald-700 font-bold text-sm">{formatVND(booking.total_rent)}</strong>
+                <strong className="text-emerald-700 font-bold text-sm">
+                  {formatVND(booking.total_rent)}
+                </strong>
               </div>
               <div>
                 <span className="text-slate-500 block">2. Cọc giữ lịch:</span>
-                <strong className="text-sky-700 font-bold">{formatVND(booking.deposit_holding_required || 0)}</strong>
+                <strong className="text-sky-700 font-bold">
+                  {formatVND(booking.deposit_holding_required || 0)}
+                </strong>
               </div>
               <div>
                 <span className="text-slate-500 block">3. Cọc thế chân:</span>
-                <strong className="text-indigo-700 font-bold">{formatVND(booking.deposit_security_required || booking.deposit_required || 0)}</strong>
+                <strong className="text-indigo-700 font-bold">
+                  {formatVND(
+                    booking.deposit_security_required || booking.deposit_required || 0
+                  )}
+                </strong>
               </div>
             </div>
 
@@ -358,47 +454,253 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
           </div>
         ) : (
           <>
-            {/* Customer & Time Information */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-cyan-600" />
-                    <span>Khách hàng</span>
-                  </span>
-                  {trustConfig && (
-                    <span className={`px-2 py-0.2 rounded text-[10px] font-bold border ${trustConfig.bg}`}>
-                      {trustConfig.label}
-                    </span>
-                  )}
-                </div>
-                <div className="text-slate-900 font-bold text-sm">{customer?.name}</div>
-                <div className="text-slate-600 flex items-center gap-2">
-                  <Phone className="w-3 h-3 text-emerald-600" />
-                  <span>{customer?.phone || 'Chưa cung cấp SĐT'}</span>
-                  {customer?.identity_card && <span>• CCCD: {customer.identity_card}</span>}
-                </div>
+            {/* 1. 6-BOX DETAIL GRID */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                <span className="block text-[10px] font-black uppercase text-slate-400">
+                  Nhận máy
+                </span>
+                <strong className="block mt-0.5 text-xs font-black text-slate-900">
+                  {formatDateTimeVN(booking.start_at)}
+                </strong>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-1">
-                <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-cyan-600" />
-                  <span>Lịch trình thuê (dd/mm/yyyy - 24h)</span>
+              <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                <span className="block text-[10px] font-black uppercase text-slate-400">
+                  Trả máy
                 </span>
-                <div className="text-slate-700">
-                  Bắt đầu: <strong className="text-slate-900">{formatDateTimeVN(booking.start_at)}</strong>
-                </div>
-                <div className="text-slate-700">
-                  Dự kiến trả: <strong className="text-amber-700">{formatDateTimeVN(booking.end_at)}</strong>
-                </div>
+                <strong className="block mt-0.5 text-xs font-black text-amber-800">
+                  {formatDateTimeVN(booking.end_at)}
+                </strong>
+              </div>
+
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-2.5">
+                <span className="block text-[10px] font-black uppercase text-emerald-700">
+                  Giá thuê
+                </span>
+                <strong className="block mt-0.5 text-xs font-black text-emerald-800">
+                  {formatMoneyGAS(booking.total_rent)} • {daThanhToan ? 'Đã thu' : 'Thu khi giao'}
+                </strong>
+              </div>
+
+              <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-2.5">
+                <span className="block text-[10px] font-black uppercase text-sky-700">
+                  Cọc giữ lịch
+                </span>
+                <strong className="block mt-0.5 text-xs font-black text-sky-900">
+                  {formatMoneyGAS(booking.deposit_holding_required || 0)} •{' '}
+                  {daNhanCocGiuLich ? 'Đã nhận' : 'Chưa nhận'}
+                </strong>
+              </div>
+
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-2.5">
+                <span className="block text-[10px] font-black uppercase text-indigo-700">
+                  Cọc thế chân
+                </span>
+                <strong className="block mt-0.5 text-xs font-black text-indigo-900">
+                  {formatMoneyGAS(
+                    booking.deposit_security_required || booking.deposit_required || 0
+                  )}{' '}
+                  • {daNhanCocTheChan ? 'Đã nhận' : 'Khi giao máy'}
+                </strong>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                <span className="block text-[10px] font-black uppercase text-slate-400">
+                  CCCD & VNeID
+                </span>
+                <strong className="block mt-0.5 text-xs font-black text-slate-900 truncate">
+                  {daNhanCCCD ? '✓ Đã nhận CCCD' : 'Giữ CCCD + VNeID'}
+                </strong>
+                {customer?.phone && (
+                  <a
+                    href={`tel:${customer.phone}`}
+                    className="text-[11px] font-bold text-blue-600 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Phone className="w-3 h-3" />
+                    <span>{customer.phone}</span>
+                  </a>
+                )}
               </div>
             </div>
 
-            {/* Checklist Thiết bị & Phụ kiện */}
+            {/* 2. THAO TÁC CẬP NHẬT TRẠNG THÁI NHANH (Chỉ giữ lại các nút chuyển trạng thái gọn gàng) */}
+            <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-black text-blue-950">
+                  Cập nhật trạng thái nhanh
+                </span>
+                <span className="text-[10.5px] font-semibold text-blue-800">
+                  Khi giao máy nhận: Cọc thế chân + Tiền thuê + CCCD bản cứng & check VNeID
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {booking.status !== 'confirmed' && (
+                  <button
+                    type="button"
+                    onClick={handleSetHoldStatus}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white shadow-2xs transition active:scale-95"
+                  >
+                    Giữ lịch
+                  </button>
+                )}
+
+                {booking.status !== 'active' && booking.status !== 'returned' && (
+                  <button
+                    type="button"
+                    onClick={handleHandoverToCustomer}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition active:scale-95"
+                  >
+                    Đã giao máy
+                  </button>
+                )}
+
+                {booking.status !== 'returned' && (
+                  <button
+                    type="button"
+                    onClick={handleCompleteReturn}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs transition active:scale-95"
+                  >
+                    Đã trả máy
+                  </button>
+                )}
+
+                {booking.status !== 'cancelled' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelModal(true)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-700 hover:bg-rose-800 text-white shadow-2xs transition active:scale-95"
+                  >
+                    Hủy lịch
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 3. MẪU TIN NHẮN TỰ ĐỘNG DẠNG DROPDOWN XỔ XUỐNG GỌN GÀNG */}
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+              <div
+                onClick={() => setIsMessageSectionOpen(!isMessageSectionOpen)}
+                className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50/80 hover:bg-slate-100/80 cursor-pointer select-none transition"
+              >
+                <div className="flex items-center gap-2">
+                  <MessageSquareText className="w-4 h-4 text-blue-600" />
+                  <span className="font-black text-slate-900 text-xs">
+                    Mẫu tin nhắn tự động (Bấm để {isMessageSectionOpen ? 'thu gọn' : 'xổ xuống'})
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyMessage(recommendedMsg.key);
+                    }}
+                    className="flex items-center gap-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 text-[11px] font-bold transition shadow-2xs"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy nhanh: {recommendedMsg.reason}</span>
+                  </button>
+                  <span className="text-xs font-bold text-slate-500 px-1">
+                    {isMessageSectionOpen ? '▲' : '▼'}
+                  </span>
+                </div>
+              </div>
+
+              {isMessageSectionOpen && (
+                <div className="p-3 border-t border-slate-200 space-y-2 bg-white">
+                  {RENTAL_MESSAGE_TYPES.map((mType) => {
+                    const isRecommended = recommendedMsg.key === mType.key;
+                    const isCopied = copiedKey === mType.key;
+                    const isItemOpen =
+                      openMessageKey === mType.key ||
+                      (openMessageKey === null && isRecommended);
+                    const currentText = editedMessages[mType.key] ?? messages[mType.key];
+
+                    return (
+                      <div
+                        key={mType.key}
+                        className={`rounded-xl border transition overflow-hidden ${
+                          isRecommended
+                            ? 'border-blue-300 bg-blue-50/20'
+                            : 'border-slate-200 bg-slate-50/40'
+                        }`}
+                      >
+                        <div
+                          onClick={() =>
+                            setOpenMessageKey(isItemOpen ? ('none' as any) : mType.key)
+                          }
+                          className="flex items-center justify-between gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100/70 transition"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[11px] text-slate-400 font-bold">
+                              {isItemOpen ? '▾' : '▸'}
+                            </span>
+                            <h4 className="font-bold text-slate-900 text-xs truncate">
+                              {mType.title}
+                            </h4>
+                            {isRecommended && (
+                              <span className="text-[9.5px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded">
+                                Gợi ý
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyMessage(mType.key);
+                            }}
+                            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold transition shrink-0 ${
+                              isCopied
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-100'
+                            }`}
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                <span>Đã copy</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {isItemOpen && (
+                          <div className="px-3 pb-2.5 pt-1 border-t border-slate-200/70 bg-white">
+                            <textarea
+                              rows={3}
+                              value={currentText}
+                              onChange={(e) =>
+                                setEditedMessages((prev) => ({
+                                  ...prev,
+                                  [mType.key]: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-lg border border-slate-200 bg-slate-50/60 p-2 text-xs text-slate-800 leading-relaxed focus:border-blue-500 focus:bg-white focus:outline-none"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 4. Checklist Thiết bị & Phụ kiện */}
             <div className="rounded-2xl border border-slate-200 bg-white p-3.5 space-y-2.5 shadow-xs">
               <h3 className="font-bold text-slate-900 text-xs flex items-center gap-2">
                 <Package className="w-4 h-4 text-cyan-600" />
-                <span>Checklist Bàn giao & Thu hồi máy</span>
+                <span>Checklist Thiết bị & Phụ kiện đi kèm</span>
               </h3>
 
               <div className="space-y-2">
@@ -416,7 +718,9 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                           </span>
                           <span className="font-bold text-slate-900">{eq?.name}</span>
                         </div>
-                        <span className="text-emerald-700 font-bold">{formatVND(item.rental_price)}</span>
+                        <span className="text-emerald-700 font-bold">
+                          {formatVND(item.rental_price)}
+                        </span>
                       </div>
 
                       {/* Checklist Phụ kiện */}
@@ -437,7 +741,10 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                                     <input
                                       type="checkbox"
                                       checked={acc.checked_out}
-                                      onChange={() => item.id && handleToggleAccessory(item.id, idx, 'checked_out')}
+                                      onChange={() =>
+                                        item.id &&
+                                        handleToggleAccessory(item.id, idx, 'checked_out')
+                                      }
                                       className="rounded accent-cyan-600 w-3.5 h-3.5"
                                     />
                                     <span className="text-[10px] text-slate-500">Đã giao</span>
@@ -446,7 +753,9 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                                     <input
                                       type="checkbox"
                                       checked={acc.checked_in}
-                                      onChange={() => item.id && handleToggleAccessory(item.id, idx, 'checked_in')}
+                                      onChange={() =>
+                                        item.id && handleToggleAccessory(item.id, idx, 'checked_in')
+                                      }
                                       className="rounded accent-emerald-600 w-3.5 h-3.5"
                                     />
                                     <span className="text-[10px] text-slate-500">Đã thu</span>
@@ -463,49 +772,15 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Chi tiết 3 khoản tiền */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 grid grid-cols-3 gap-2 shadow-xs">
-              <div className="rounded-xl bg-emerald-50/50 p-2 border border-emerald-100">
-                <span className="text-[10px] text-emerald-800 font-semibold block">1. Tiền thuê</span>
-                <strong className="text-emerald-700 font-bold text-sm">{formatVND(booking.total_rent)}</strong>
-              </div>
-              <div className="rounded-xl bg-sky-50/50 p-2 border border-sky-100">
-                <span className="text-[10px] text-sky-800 font-semibold block">2. Cọc giữ lịch</span>
-                <strong className="text-sky-800 font-bold">{formatVND(booking.deposit_holding_required || 0)}</strong>
-              </div>
-              <div className="rounded-xl bg-indigo-50/50 p-2 border border-indigo-100">
-                <span className="text-[10px] text-indigo-800 font-semibold block">3. Cọc thế chân</span>
-                <strong className="text-indigo-800 font-bold">{formatVND(booking.deposit_security_required || booking.deposit_required || 0)}</strong>
-              </div>
-            </div>
-
-            {/* Workflow Action Controls */}
-            {booking.status === 'confirmed' && (
-              <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h4 className="font-bold text-blue-950 text-xs">Bàn giao máy cho khách</h4>
-                    <p className="text-[11px] text-blue-800">
-                      Thu tiền thuê + Thu cọc thế chân. Cọc giữ lịch (nếu có) sẽ được cấn trừ/hoàn trả.
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleHandoverToCustomer}
-                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 font-bold text-white shadow-xs active:scale-95 transition"
-                  >
-                    <span>Giao máy cho khách</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-
+            {/* 5. Quy trình trả máy có phụ phí */}
             {booking.status === 'active' && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
                 <div>
-                  <h4 className="font-bold text-amber-950 text-xs">Quy trình nhận lại máy & Hoàn cọc thế chân</h4>
+                  <h4 className="font-bold text-amber-950 text-xs">
+                    Nhận lại máy & Tính phụ phí (nếu có)
+                  </h4>
                   <p className="text-[11px] text-amber-800">
-                    Kiểm tra tình trạng thân vỏ, kính lens, phụ kiện. Nhập phụ phí (nếu trễ giờ/hao hụt) để trừ trực tiếp vào tiền cọc thế chân.
+                    Nếu có phát sinh trễ giờ/hư hỏng, nhập phụ phí bên dưới trước khi bấm Nhận máy & Hoàn cọc.
                   </p>
                 </div>
 
@@ -546,7 +821,8 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                       {formatVND(
                         Math.max(
                           0,
-                          (booking.deposit_security_received || booking.deposit_received || 0) - Number(returnExtraFee)
+                          (booking.deposit_security_received || booking.deposit_received || 0) -
+                            Number(returnExtraFee)
                         )
                       )}
                     </strong>
@@ -557,7 +833,7 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                     className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-4 py-2 font-bold text-white shadow-xs active:scale-95 transition"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Nhận máy & Hoàn cọc</span>
+                    <span>Nhận máy & Copy tin hoàn tất</span>
                   </button>
                 </div>
               </div>
@@ -572,18 +848,16 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                 title="Xóa vĩnh viễn đơn thuê này"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Xóa đơn thuê này</span>
+                <span>Xóa vĩnh viễn lịch thuê</span>
               </button>
 
-              {(booking.status === 'confirmed' || booking.status === 'draft') && (
-                <button
-                  type="button"
-                  onClick={() => setShowCancelModal(true)}
-                  className="text-xs font-semibold text-rose-600 hover:text-rose-800 hover:underline px-2 py-1"
-                >
-                  Hủy đơn thuê
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100"
+              >
+                Đóng
+              </button>
             </div>
           </>
         )}
@@ -594,11 +868,11 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
         isOpen={showCancelModal}
         onClose={() => setShowCancelModal(false)}
         onConfirm={handleConfirmCancel}
-        title="Xác nhận hủy đơn thuê"
+        title="Xác nhận hủy lịch thuê"
         itemName={booking ? `${booking.booking_code} - ${customer?.name || 'Khách'}` : ''}
-        itemType="đơn thuê"
-        description="Bạn có chắc chắn muốn hủy đơn thuê này? Thiết bị trong đơn sẽ được chuyển lại trạng thái sẵn sàng trong kho."
-        confirmButtonText="Xác nhận hủy đơn"
+        itemType="lịch thuê"
+        description="Bạn có chắc chắn muốn chuyển lịch thuê này sang trạng thái HỦY? Thiết bị trong đơn sẽ được trả lại trạng thái sẵn sàng."
+        confirmButtonText="Xác nhận hủy lịch"
       />
 
       {/* Permanent Delete Confirmation Modal */}
@@ -606,10 +880,10 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleConfirmDelete}
-        title="Xóa vĩnh viễn đơn thuê"
+        title="Xóa vĩnh viễn lịch thuê"
         itemName={booking ? `${booking.booking_code} (${customer?.name || 'Khách'})` : ''}
-        itemType="đơn thuê"
-        description="Đơn thuê này và tất cả các mục thiết bị, bút toán giao dịch liên quan sẽ bị xóa hoàn toàn khỏi cơ sở dữ liệu. Hành động này không thể hoàn tác!"
+        itemType="lịch thuê"
+        description="Lịch thuê này và tất cả các mục thiết bị, bút toán giao dịch liên quan sẽ bị xóa hoàn toàn khỏi cơ sở dữ liệu."
         confirmButtonText="Xác nhận xóa vĩnh viễn"
       />
     </GlassModal>

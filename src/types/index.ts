@@ -65,11 +65,18 @@ export interface Booking {
   deposit_holding_required: number;
   deposit_holding_received: number;
   deposit_holding_returned: number;
+  has_received_holding_deposit?: boolean; // daNhanCocGiuLich
 
   // 2. Tiền cọc thế chân (Cọc bảo lãnh tài sản - hoàn lại khi trả máy nguyên vẹn)
   deposit_security_required: number;
   deposit_security_received: number;
   deposit_security_returned: number;
+  has_received_security_deposit?: boolean; // daNhanCocTheChan
+
+  // 3. Giữ CCCD & Trạng thái thanh toán (Tương thích Google Apps Script)
+  keep_cccd?: boolean;          // giuCCCD
+  has_received_cccd?: boolean;  // daNhanCCCD
+  is_rent_paid?: boolean;       // daThanhToan
 
   // Tương thích ngược
   deposit_required: number;

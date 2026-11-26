@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Upload, Trash2, AlertCircle } from 'lucide-react';
 import { db } from '../../db/db.ts';
 import { GlassModal } from '../common/GlassModal.tsx';
+import { PopupSelect } from '../common/PopupSelect.tsx';
 import { compressImageFile } from '../../utils/imageCompression.ts';
 import { generateShortEquipmentCode } from '../../utils/bookingHelpers.ts';
 import type { Equipment, Category, EquipmentStatus, EquipmentCondition } from '../../types/index.ts';
@@ -220,17 +221,14 @@ export const EquipmentModal: React.FC<EquipmentModalProps> = ({
             <label className="block font-semibold text-slate-700 mb-1">
               Phân loại thiết bị
             </label>
-            <select
+            <PopupSelect
               value={categoryId}
-              onChange={(e) => setCategoryId(Number(e.target.value))}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-cyan-500 focus:outline-none shadow-xs"
-            >
-              {effectiveCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setCategoryId(Number(val))}
+              options={effectiveCategories.map((c) => ({
+                value: c.id!,
+                label: c.name,
+              }))}
+            />
           </div>
         </div>
 
@@ -319,8 +317,8 @@ export const EquipmentModal: React.FC<EquipmentModalProps> = ({
           </div>
         </div>
 
-        {/* Row 4: Deposit & CCCD */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Row 4: Deposit & Mandatory CCCD/VNeID policy */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
           <div>
             <label className="block font-semibold text-slate-700 mb-1">
               Tiền cọc thế chân mặc định (VND)
@@ -335,16 +333,8 @@ export const EquipmentModal: React.FC<EquipmentModalProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-2 pt-6">
-            <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 text-xs">
-              <input
-                type="checkbox"
-                checked={keepCCCD}
-                onChange={(e) => setKeepCCCD(e.target.checked)}
-                className="rounded accent-cyan-600 w-4 h-4 cursor-pointer"
-              />
-              <span>Giữ CCCD/CMND gốc làm tin khi thuê</span>
-            </label>
+          <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-3 py-2 text-[11px] font-semibold text-blue-900">
+            Mặc định khi giao máy: Nhận cọc thế chân + tiền thuê + giữ CCCD bản cứng & check VNeID.
           </div>
         </div>
 
@@ -352,16 +342,16 @@ export const EquipmentModal: React.FC<EquipmentModalProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Trạng thái máy</label>
-            <select
+            <PopupSelect
               value={status}
-              onChange={(e) => setStatus(e.target.value as EquipmentStatus)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none shadow-xs"
-            >
-              <option value="available">Sẵn sàng (Hoạt động)</option>
-              <option value="rented">Đang cho thuê</option>
-              <option value="maintenance">Bảo dưỡng / Sửa chữa</option>
-              <option value="retired">Ngừng khai thác</option>
-            </select>
+              onChange={(val) => setStatus(val as EquipmentStatus)}
+              options={[
+                { value: 'available', label: 'Sẵn sàng (Hoạt động)' },
+                { value: 'rented', label: 'Đang cho thuê' },
+                { value: 'maintenance', label: 'Bảo dưỡng / Sửa chữa' },
+                { value: 'retired', label: 'Ngừng khai thác' },
+              ]}
+            />
           </div>
 
           <div>
