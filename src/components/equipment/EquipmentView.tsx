@@ -15,7 +15,10 @@ import { PopupSelect } from '../common/PopupSelect.tsx';
 import { EquipmentModal } from './EquipmentModal.tsx';
 import { DeleteConfirmModal } from '../common/DeleteConfirmModal.tsx';
 import { formatVND, EQUIPMENT_STATUS_MAP } from '../../utils/formatters.ts';
-import type { Equipment } from '../../types/index.ts';
+import type { Equipment, Category } from '../../types/index.ts';
+
+const EMPTY_EQUIPMENT: Equipment[] = [];
+const EMPTY_CATEGORIES: Category[] = [];
 
 interface EquipmentViewProps {
   onOpenNewBookingWithEquipment?: (equipmentId: number) => void;
@@ -26,8 +29,8 @@ export const EquipmentView: React.FC<EquipmentViewProps> = ({
   onOpenNewBookingWithEquipment,
   onCheckAvailability,
 }) => {
-  const equipment = useLiveQuery(() => db.equipment.toArray()) || [];
-  const categories = useLiveQuery(() => db.categories.toArray()) || [];
+  const equipment = useLiveQuery(() => db.equipment.toArray(), [], EMPTY_EQUIPMENT);
+  const categories = useLiveQuery(() => db.categories.toArray(), [], EMPTY_CATEGORIES);
 
   const [selectedCategory, setSelectedCategory] = useState<number | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');

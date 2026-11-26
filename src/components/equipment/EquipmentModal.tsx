@@ -52,8 +52,12 @@ export const EquipmentModal: React.FC<EquipmentModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const defaultCatId = effectiveCategories[0]?.id || 1;
+
   useEffect(() => {
-    const defaultCatId = effectiveCategories[0]?.id || 1;
+    if (!isOpen) return;
+    let cancelled = false;
+
     if (equipmentToEdit) {
       setAssetCode(equipmentToEdit.asset_code);
       setName(equipmentToEdit.name);
@@ -74,8 +78,10 @@ export const EquipmentModal: React.FC<EquipmentModalProps> = ({
       setNotes(equipmentToEdit.notes || '');
     } else {
       db.equipment.toArray().then((allEq) => {
-        const shortCode = generateShortEquipmentCode(allEq.map((e) => e.asset_code));
-        setAssetCode(shortCode);
+        if (!cancelled) {
+          const shortCode = generateShortEquipmentCode(allEq.map((e) => e.asset_code));
+          setAssetCode(shortCode);
+        }
       });
       setName('');
       setCategoryId(defaultCatId);
@@ -95,7 +101,11 @@ export const EquipmentModal: React.FC<EquipmentModalProps> = ({
       setNotes('');
     }
     setErrorMsg('');
-  }, [equipmentToEdit, isOpen, categories]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [equipmentToEdit?.id, isOpen, defaultCatId]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

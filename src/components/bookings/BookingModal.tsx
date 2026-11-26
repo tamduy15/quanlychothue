@@ -45,6 +45,11 @@ interface BookingModalProps {
   onSaved: () => void;
 }
 
+const EMPTY_CUSTOMERS: Customer[] = [];
+const EMPTY_EQUIPMENT: Equipment[] = [];
+const EMPTY_BOOKINGS: Booking[] = [];
+const EMPTY_BOOKING_ITEMS: BookingItem[] = [];
+
 export const BookingModal: React.FC<BookingModalProps> = ({
   isOpen,
   onClose,
@@ -54,10 +59,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   bookingToEdit,
   onSaved,
 }) => {
-  const customers = useLiveQuery(() => db.customers.toArray()) || [];
-  const allEquipment = useLiveQuery(() => db.equipment.toArray()) || [];
-  const allBookings = useLiveQuery(() => db.bookings.toArray()) || [];
-  const allBookingItems = useLiveQuery(() => db.booking_items.toArray()) || [];
+  const customers = useLiveQuery(() => db.customers.toArray(), [], EMPTY_CUSTOMERS);
+  const allEquipment = useLiveQuery(() => db.equipment.toArray(), [], EMPTY_EQUIPMENT);
+  const allBookings = useLiveQuery(() => db.bookings.toArray(), [], EMPTY_BOOKINGS);
+  const allBookingItems = useLiveQuery(() => db.booking_items.toArray(), [], EMPTY_BOOKING_ITEMS);
 
   // Form State
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | 'new' | ''>('');
@@ -106,7 +111,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   // Helper date conversions
   const pad = (n: number) => String(n).padStart(2, '0');
 
+  const initialDateTs = initialDate ? initialDate.getTime() : undefined;
+  const initialEndDateTs = initialEndDate ? initialEndDate.getTime() : undefined;
+
   useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
     if (bookingToEdit) {
       setSelectedCustomerId(bookingToEdit.customer_id);
       const cust = customers.find((c) => c.id === bookingToEdit.customer_id);
@@ -114,6 +125,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         setCustomerName(cust.name);
         setCustomerPhone(cust.phone || '');
         setCustomerCCCD(cust.identity_card || '');
+      } else if (bookingToEdit.customer_id) {
+        db.customers.get(bookingToEdit.customer_id).then((fetched) => {
+          if (!cancelled && fetched) {
+            setCustomerName(fetched.name);
+            setCustomerPhone(fetched.phone || '');
+            setCustomerCCCD(fetched.identity_card || '');
+          }
+        });
       }
 
       const s = new Date(bookingToEdit.start_at);
@@ -143,19 +162,30 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       setStatus(bookingToEdit.status);
       setHandoverNotes(bookingToEdit.handover_notes || '');
 
-      const itemEquipIds = allBookingItems
-        .filter((bi) => bi.booking_id === bookingToEdit.id)
-        .map((bi) => bi.equipment_id);
-      setSelectedEquipmentIds(itemEquipIds);
+      if (bookingToEdit.id) {
+        db.booking_items
+          .where('booking_id')
+          .equals(bookingToEdit.id)
+          .toArray()
+          .then((items) => {
+            if (!cancelled) {
+              setSelectedEquipmentIds(items.map((bi) => bi.equipment_id));
+            }
+          });
+      }
     } else {
       const now = new Date();
-      const baseDate = initialDate || now;
-      const hasCustomStartHour = initialDate && (initialDate.getHours() !== 0 || initialDate.getMinutes() !== 0);
+      const baseDate = initialDateTs !== undefined ? new Date(initialDateTs) : now;
+      const hasCustomStartHour =
+        initialDateTs !== undefined &&
+        (baseDate.getHours() !== 0 || baseDate.getMinutes() !== 0);
       const returnDate =
-        initialEndDate ||
-        new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 1);
+        initialEndDateTs !== undefined
+          ? new Date(initialEndDateTs)
+          : new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 1);
       const hasCustomEndHour =
-        initialEndDate && (initialEndDate.getHours() !== 0 || initialEndDate.getMinutes() !== 0);
+        initialEndDateTs !== undefined &&
+        (returnDate.getHours() !== 0 || returnDate.getMinutes() !== 0);
 
       setStartDateStr(toDateInputValue(baseDate));
       setStartTimeStr(
@@ -187,7 +217,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       setHandoverNotes('');
     }
     setErrorMsg('');
-  }, [bookingToEdit, isOpen, preselectedEquipmentId, initialDate, initialEndDate, customers]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, bookingToEdit?.id, preselectedEquipmentId, initialDateTs, initialEndDateTs]);
 
   // Construct valid ISO date from YYYY-MM-DD and HH:mm
   const parsedStart = useMemo(() => {

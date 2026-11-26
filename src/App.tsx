@@ -36,8 +36,11 @@ import { OfflineIndicator } from './components/common/OfflineIndicator.tsx';
 import { BackupAlertBanner } from './components/common/BackupAlertBanner.tsx';
 import { useBackupReminder } from './hooks/useBackupReminder.ts';
 import { STORE_OWNER } from './utils/formatters.ts';
+import type { Category } from './types/index.ts';
 
 export type NavTab = 'dashboard' | 'equipment' | 'bookings' | 'messages' | 'customers' | 'finance' | 'backup';
+
+const EMPTY_CATEGORIES: Category[] = [];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
@@ -62,8 +65,8 @@ export default function App() {
   const { daysSinceBackup, shouldAlert, refreshBackupStatus } = useBackupReminder();
 
   // Badges counts
-  const categories = useLiveQuery(() => db.categories.toArray()) || [];
-  const activeBookingsCount = useLiveQuery(() => db.bookings.where('status').equals('active').count()) || 0;
+  const categories = useLiveQuery(() => db.categories.toArray(), [], EMPTY_CATEGORIES);
+  const activeBookingsCount = useLiveQuery(() => db.bookings.where('status').equals('active').count(), [], 0);
 
   useEffect(() => {
     initializeDatabaseIfEmpty().then(() => {
